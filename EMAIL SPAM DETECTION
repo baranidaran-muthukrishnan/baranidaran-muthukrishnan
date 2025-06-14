@@ -1,0 +1,158 @@
+# SPAM EMAIL DETECTOR - FULL FEATURED WITH GUI & AUTH
+
+# --------------------------------------------
+# 1. IMPORT LIBRARIES
+# --------------------------------------------
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import LinearSVC
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_auc_score, roc_curve
+import joblib
+import string
+import re
+import tkinter as tk
+from tkinter import messagebox
+import sqlite3
+import os
+
+# --------------------------------------------
+# 2. DATABASE SETUP FOR AUTHENTICATION
+# --------------------------------------------
+db_file = "user_data.db"
+conn = sqlite3.connect(db_file)
+cursor = conn.cursor()
+cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+    username TEXT PRIMARY KEY,
+    password TEXT NOT NULL
+)''')
+conn.commit()
+
+# --------------------------------------------
+# 3. LOAD AND CLEAN DATASET
+# --------------------------------------------
+url = "https://raw.githubusercontent.com/justmarkham/pycon-2016-tutorial/master/data/sms.tsv"
+df = pd.read_table(url, header=None, names=["label", "message"])
+df['label'] = df['label'].map({'ham': 0, 'spam': 1})
+df['length'] = df['message'].apply(len)
+df['word_count'] = df['message'].apply(lambda x: len(x.split()))
+
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r'\d+', '', text)
+    text = text.translate(str.maketrans('', '', string.punctuation))
+    text = text.strip()
+    return text
+
+df['clean_message'] = df['message'].apply(clean_text)
+
+# --------------------------------------------
+# 4. FEATURE EXTRACTION
+# --------------------------------------------
+X = df['clean_message']
+y = df['label']
+tfidf = TfidfVectorizer(stop_words='english')
+X_tfidf = tfidf.fit_transform(X)
+
+X_train, X_test, y_train, y_test = train_test_split(X_tfidf, y, test_size=0.2, random_state=42)
+lr_model = LogisticRegression(max_iter=1000)
+lr_model.fit(X_train, y_train)
+
+joblib.dump(lr_model, "spam_classifier_model.pkl")
+joblib.dump(tfidf, "vectorizer.pkl")
+
+# --------------------------------------------
+# 5. GUI AUTH & PREDICTION FUNCTIONS
+# --------------------------------------------
+def register_user():
+    user = entry_user.get()
+    pwd = entry_pass.get()
+    if user and pwd:
+        try:
+            cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (user, pwd))
+            conn.commit()
+            messagebox.showinfo("Success", "User Registered!")
+        except sqlite3.IntegrityError:
+            messagebox.showerror("Error", "Username already exists!")
+    else:
+        messagebox.showerror("Error", "Fields cannot be empty!")
+
+def login_user():
+    user = entry_user.get()
+    pwd = entry_pass.get()
+    cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (user, pwd))
+    if cursor.fetchone():
+        messagebox.showinfo("Welcome", f"Welcome {user}!")
+        main_window(user)
+    else:
+        messagebox.showerror("Error", "Invalid login")
+
+def main_window(username):
+    top = tk.Toplevel()
+    top.title("Spam Detector")
+    top.geometry("500x400")
+    
+    tk.Label(top, text=f"Logged in as: {username}", fg="green").pack(pady=5)
+    
+    msg_entry = tk.Text(top, height=8, width=60)
+    msg_entry.pack(pady=10)
+
+    def predict():
+        msg = msg_entry.get("1.0", tk.END).strip()
+        if msg:
+            model = joblib.load("spam_classifier_model.pkl")
+            vec = joblib.load("vectorizer.pkl")
+            clean = clean_text(msg)
+            vector = vec.transform([clean])
+            prediction = model.predict(vector)[0]
+            label = "SPAM" if prediction == 1 else "HAM"
+            store_result(username, msg, label)
+            messagebox.showinfo("Result", f"Message is {label}")
+        else:
+            messagebox.showerror("Error", "Empty Message")
+
+    tk.Button(top, text="Predict", command=predict).pack(pady=10)
+
+# --------------------------------------------
+# 6. DATABASE LOGGING OF RESULTS
+# --------------------------------------------
+cursor.execute('''CREATE TABLE IF NOT EXISTS messages (
+    username TEXT,
+    message TEXT,
+    result TEXT
+)''')
+conn.commit()
+
+def store_result(user, msg, label):
+    cursor.execute("INSERT INTO messages (username, message, result) VALUES (?, ?, ?)", (user, msg, label))
+    conn.commit()
+
+# --------------------------------------------
+# 7. MAIN GUI
+# --------------------------------------------
+root = tk.Tk()
+root.title("Login - Spam Detector")
+root.geometry("300x250")
+
+tk.Label(root, text="Username").pack()
+entry_user = tk.Entry(root)
+entry_user.pack()
+
+tk.Label(root, text="Password").pack()
+entry_pass = tk.Entry(root, show="*")
+entry_pass.pack()
+
+tk.Button(root, text="Login", command=login_user).pack(pady=5)
+tk.Button(root, text="Register", command=register_user).pack()
+
+root.mainloop()
+
+# --------------------------------------------
+# END OF PROGRAM
+# --------------------------------------------
+
