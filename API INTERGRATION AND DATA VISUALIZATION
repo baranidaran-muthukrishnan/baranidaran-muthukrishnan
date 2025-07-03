@@ -1,0 +1,71 @@
+import requests
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import time
+
+# Your API Key
+API_KEY = "ae2c84c9e1ce444ab7453114250906"
+BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
+
+# Cities to fetch weather for
+cities = ["Chennai", "Delhi", "Mumbai", "Bangalore", "Kolkata"]
+
+# Container for weather data
+weather_data = []
+
+# Fetching data for each city
+for city in cities:
+    print(f" Fetching data for {city}...")
+    params = {
+        "q": city,
+        "appid": API_KEY,
+        "units": "metric"
+    }
+    response = requests.get(BASE_URL, params=params)
+    
+    if response.status_code == 200:
+        data = response.json()
+        temp = data["main"]["temp"]
+        humidity = data["main"]["humidity"]
+        weather_data.append({
+            "City": city,
+            "Temperature (°C)": temp,
+            "Humidity (%)": humidity
+        })
+    else:
+        print(f" Failed to get data for {city} (Status: {response.status_code})")
+        try:
+            print(" Reason:", response.json())
+        except:
+            print("No response body.")
+
+    time.sleep(1)  # Wait to avoid rate-limit
+
+# Convert to DataFrame
+df = pd.DataFrame(weather_data)
+
+# Check if we have any data
+if df.empty:
+    print(" No data fetched. Can't plot graphs. Try again later.")
+else:
+    # Set plot style
+    sns.set(style="whitegrid")
+
+    # Temperature Plot
+    plt.figure(figsize=(10, 5))
+    sns.barplot(x="City", y="Temperature (°C)", data=df, palette="coolwarm")
+    plt.title("Current Temperature in Cities")
+    plt.ylabel("Temperature (°C)")
+    plt.show()
+
+    # Humidity Plot
+    plt.figure(figsize=(10, 5))
+    sns.barplot(x="City", y="Humidity (%)", data=df, palette="Blues_d")
+    plt.title("Current Humidity in Cities")
+    plt.ylabel("Humidity (%)")
+    plt.show()
+
+
+
+
